@@ -19,6 +19,31 @@ float angleToRadian(float angle) {
     return angle * M_PI / 180.0f;
 }
 
+struct Line {
+    float angle;
+    sf::Vertex vertices[2];
+    Line(float a) : angle(a) {
+        updateVertices();
+    }
+
+    void updateVertices() {
+        vertices[0] = sf::Vertex(sf::Vector2f(origin.x, origin.y), sf::Color::White);
+        vertices[1] = sf::Vertex(
+            sf::Vector2f(
+                origin.x + cos(angleToRadian(angle)) * LINE_LENGTH,
+                origin.y - sin(angleToRadian(angle)) * LINE_LENGTH
+            ),
+            sf::Color::White
+        );
+    }
+
+    friend void swap(Line& a, Line& b) noexcept {
+        std::swap(a.angle, b.angle);
+        a.updateVertices();
+        b.updateVertices();
+    }
+};
+
 std::vector<Line> lines;
 bool sorting = false;
 int left = 0, right = -1, pivotIndex = -1, i = 0, j = 0;
@@ -26,35 +51,15 @@ enum class State { PARTITION, SWAP, RECURSE };
 State state = State::PARTITION;
 std::stack<std::pair<int, int>> stack;
 
-struct Line {
-    float angle;
-    sf::Vertex vertices[2];
-    Line(float a) : angle(a) {
-        vertices[0] = sf::Vertex(sf::Vector2f(origin.x, origin.y), sf::Color::White);
-        vertices[1] = sf::Vertex(
-            sf::Vector2f(origin.x + cos(angleToRadian(angle)) * LINE_LENGTH,
-                origin.y - sin(angleToRadian(angle)) * LINE_LENGTH),
-            sf::Color::White
-        );
-    }
-    friend void swap(Line& a, Line& b) noexcept {
-        std::swap(a.angle, b.angle);
-        std::swap(a.vertices[0], b.vertices[0]);
-        std::swap(a.vertices[1], b.vertices[1]);
-    }
-};
-
-void swap(Line l1, Line l2) {
-    
-}
-
 void generateLines() {
+    lines.clear(); // Clear old lines
     lines.reserve(NUM_LINES);
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dist(60.0f, 120.0f);
     for (int k = 0; k < NUM_LINES; ++k) {
-        lines[k] = Line(dist(gen));
+        lines.push_back(Line(dist(gen)));
     }
 }
 
@@ -68,7 +73,14 @@ void quicksort(int leftBound, int rightBound) {
         state = State::PARTITION;
     }
     else {
-        sorting = false;
+        if (!stack.empty()) {
+            auto [l, r] = stack.top();
+            stack.pop();
+            quicksort(l, r);
+        }
+        else {
+            sorting = false;
+        }
     }
 }
 
@@ -97,9 +109,9 @@ void updateSort() {
             if (i + 1 < right) stack.push({ i + 1, right });
             if (left < i - 1) quicksort(left, i - 1);
             else if (!stack.empty()) {
-                std::pair<int, int> bounds = stack.top();
+                auto [l, r] = stack.top();
                 stack.pop();
-                quicksort(bounds.first, bounds.second);
+                quicksort(l, r);
             }
             else {
                 sorting = false;
@@ -109,9 +121,9 @@ void updateSort() {
             if (left < i - 1) stack.push({ left, i - 1 });
             if (i + 1 < right) quicksort(i + 1, right);
             else if (!stack.empty()) {
-                std::pair<int, int> bounds = stack.top();
+                auto [l, r] = stack.top();
                 stack.pop();
-                quicksort(bounds.first, bounds.second);
+                quicksort(l, r);
             }
             else {
                 sorting = false;
@@ -134,6 +146,10 @@ void drawLines(sf::RenderWindow& window) {
                 lines[k].vertices[0].color = lines[k].vertices[1].color = sf::Color::White;
             }
         }
+        else {
+            lines[k].vertices[0].color = lines[k].vertices[1].color = sf::Color::White;
+        }
+
         window.draw(lines[k].vertices, 2, sf::Lines);
     }
     window.display();
@@ -147,7 +163,7 @@ int main() {
 
     generateLines();
     sf::Clock clock;
-    float updateInterval = 0.05f; // Update every 50ms( this is the whole reason we have divided our sorting algo to 3 stages)
+    float updateInterval = 0.05f;
 
     while (window.isOpen()) {
         sf::Event event;
@@ -157,8 +173,8 @@ int main() {
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
                 if (!sorting) {
-                    stack = std::stack<std::pair<int, int>>(); // Clear stack
-                    generateLines(); 
+                    stack = std::stack<std::pair<int, int>>();
+                    generateLines();
                     sorting = true;
                     quicksort(0, NUM_LINES - 1);
                 }
